@@ -8,26 +8,38 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 class R2Client {
-  private client: S3Client;
-  private bucketName: string;
-  private publicUrl: string;
+  private _client: S3Client | null = null;
+  private _bucketName = '';
+  private _publicUrl = '';
 
-  constructor() {
+  private init(): { client: S3Client; bucketName: string; publicUrl: string } {
+    if (this._client) {
+      return { client: this._client, bucketName: this._bucketName, publicUrl: this._publicUrl };
+    }
     const accountId = process.env.R2_ACCOUNT_ID;
     const accessKeyId = process.env.R2_ACCESS_KEY_ID;
     const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-    this.bucketName = process.env.R2_BUCKET_NAME || '';
-    this.publicUrl = process.env.R2_PUBLIC_URL || '';
-
-    if (!accountId || !accessKeyId || !secretAccessKey || !this.bucketName) {
+    this._bucketName = process.env.R2_BUCKET_NAME || '';
+    this._publicUrl = process.env.R2_PUBLIC_URL || '';
+    if (!accountId || !accessKeyId || !secretAccessKey || !this._bucketName) {
       throw new Error('Missing required R2 environment variables');
     }
-
-    this.client = new S3Client({
+    this._client = new S3Client({
       region: 'auto',
       endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
       credentials: { accessKeyId, secretAccessKey },
     });
+    return { client: this._client, bucketName: this._bucketName, publicUrl: this._publicUrl };
+  }
+
+  private get client(): S3Client {
+    return this.init().client;
+  }
+  private get bucketName(): string {
+    return this.init().bucketName;
+  }
+  private get publicUrl(): string {
+    return this.init().publicUrl;
   }
 
   async uploadFile(

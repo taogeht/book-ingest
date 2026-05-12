@@ -2,8 +2,9 @@ import { cookies } from 'next/headers';
 import { db, systemSettings } from './db';
 import { eq } from 'drizzle-orm';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { SESSION_COOKIE } from './auth-constants';
 
-export const SESSION_COOKIE = 'ingest_session';
+export { SESSION_COOKIE };
 const SESSION_TOKEN_HASH_KEY = 'session_token_hash';
 const SESSION_TTL_DAYS = 30;
 
