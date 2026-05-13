@@ -359,7 +359,7 @@
     <div class="statusbar">
       <div>
         <div class="label">Phase</div>
-        <div class="value">1 · MVP extraction</div>
+        <div class="value">1.5 · Marker + vision</div>
       </div>
       <div>
         <div class="label">First target</div>
@@ -371,7 +371,7 @@
       </div>
       <div>
         <div class="label">Last reviewed</div>
-        <div class="value">2026-05-13</div>
+        <div class="value">2026-05-14</div>
       </div>
     </div>
 
@@ -379,7 +379,9 @@
       <h2><span class="num">01</span>Phase 1 scope <a class="anchor" href="#scope">#</a></h2>
       <p>The slice that's shipped today. Anything not listed here is intentionally deferred — see <a href="#phase2">Phase 2 priorities</a>.</p>
       <ul>
-        <li>Digital PDFs only — no OCR, no vision-LLM fallback.</li>
+        <li>Digital PDFs (Marker handles them natively; scanned PDFs work opportunistically via Marker's built-in Surya OCR but aren't an explicit target).</li>
+        <li>Layout-aware text extraction via <strong>Marker</strong> (Python subprocess) + page-image rendering via <strong>pdftoppm</strong> at 150&nbsp;DPI.</li>
+        <li><strong>Vision-LLM fallback</strong> (Claude Sonnet 4.6 with image input) for low-text pages and picture-word grids — the layouts where Marker alone misses the point.</li>
         <li>Vocabulary extraction only — no reading passages, no grammar focus.</li>
         <li>One source document per project.</li>
         <li>LLM-driven unit detection + vocabulary extraction (Claude Sonnet 4.6).</li>
@@ -396,13 +398,19 @@
           <tr><td>Framework</td><td>Next.js 16, App Router, Node runtime</td><td>Matches recording-app</td></tr>
           <tr><td>Database</td><td>Postgres + Drizzle ORM</td><td>Schema applied via <code>drizzle-kit push</code> on boot</td></tr>
           <tr><td>Object storage</td><td>Cloudflare R2 (S3 API)</td><td>Shared account with recording-app</td></tr>
-          <tr><td>PDF parsing</td><td><code>pdfjs-dist</code> legacy build</td><td>Node-native, no Python dep in v1</td></tr>
-          <tr><td>LLM</td><td><code>@anthropic-ai/sdk</code> · Sonnet 4.6</td><td>Two-stage prompt: units, then vocab</td></tr>
+          <tr><td>PDF text extraction</td><td><code>marker-pdf</code> (Python, subprocess)</td><td>Layout-aware blocks, picture/heading/table classification, reading order</td></tr>
+          <tr><td>Page rendering</td><td><code>pdftoppm</code> (poppler-utils, subprocess)</td><td>~100&nbsp;ms/page; runs concurrent with Marker</td></tr>
+          <tr><td>Vision fallback</td><td><code>@anthropic-ai/sdk</code> · Sonnet 4.6 + image input</td><td>Recovers labels from picture-word grids Marker misses</td></tr>
+          <tr><td>LLM (unit/vocab)</td><td><code>@anthropic-ai/sdk</code> · Sonnet 4.6</td><td>Two prompt stages with Zod-validated JSON output</td></tr>
           <tr><td>Bundle</td><td><code>jszip</code></td><td>Pure Node, no native deps</td></tr>
           <tr><td>UI</td><td>Tailwind v4</td><td>Same conventions as recording-app</td></tr>
           <tr><td>Auth</td><td>Single password via <code>INGEST_PASSWORD</code> env</td><td>Single-operator tool</td></tr>
         </tbody>
       </table>
+      <div class="callout warn">
+        <span class="tag">Image weight</span>
+        Marker pulls PyTorch and model weights (~2&nbsp;GB downloaded). The final container is ~5&nbsp;GB on disk. Pre-warm happens at <code>docker build</code> time so the first ingest doesn't pay for HuggingFace downloads.
+      </div>
     </section>
 
     <section id="local">
@@ -435,27 +443,36 @@ npm run dev
 
     <section id="pipeline">
       <h2><span class="num">05</span>Pipeline <a class="anchor" href="#pipeline">#</a></h2>
-      <p>Triggered fire-and-forget from <code>POST /api/projects/[id]/upload</code> after the PDF lands in R2.</p>
+      <p>Triggered fire-and-forget from <code>POST /api/projects/[id]/upload</code> after the PDF lands in R2. Stages 1 and 2 run concurrently; 3 starts after both finish.</p>
 
       <ol class="pipeline">
         <li>
-          <strong>Detect file type</strong>
-          <span>Quick parse via <code>pdfjs-dist</code>; if any page yields text it's <code>pdf_digital</code>, otherwise <code>pdf_scanned</code> (Phase 2 work).</span>
+          <strong>Page-image rendering · pdftoppm</strong>
+          <span>Every page → PNG at 150&nbsp;DPI, uploaded to R2 at <code>ingestion-pages/{project_id}/{source_doc_id}/page-{n}.png</code>. Fast (~100&nbsp;ms/page). Storage keys land in <code>extracted_pages.page_image_key</code>.</span>
         </li>
         <li>
-          <strong>Page extraction</strong>
-          <span><code>pdfjs-dist</code> text content + position metadata. Lines are reconstructed from y-coordinates and stored in <code>extracted_pages.raw_text</code>; raw item positions go to <code>layout_json</code>.</span>
+          <strong>Text extraction · Marker</strong>
+          <span><code>marker_single --output_format json</code> as a subprocess. Output is parsed into per-page <code>raw_text</code> (reading-order concatenation) and <code>layout_json</code> (the full Marker block tree with image blobs stripped). Slow (~10–30&nbsp;s/page on CPU).</span>
+        </li>
+        <li>
+          <strong>Vision fallback · Claude Sonnet 4.6 + image</strong>
+          <span>Triggered per page when Marker yielded <code>&lt;50</code> chars, when the page is figure-heavy (≥4 picture blocks + &lt;30 words — typical picture-word grid), or when Marker failed on that page. The page PNG is sent to Claude with a prompt to extract labels and classify the page (<code>vocabulary_grid | reading_passage | exercise | dialogue | other</code>). Vision-derived text replaces the Marker text on that row; <code>extraction_method</code> becomes <code>vision</code> or <code>marker+vision</code>.</span>
         </li>
         <li>
           <strong>Unit detection</strong>
-          <span>Claude Sonnet 4.6 receives all page snippets (first ~200 chars each) and returns JSON <code>{ units: [...] }</code>. Validated with Zod, persisted to <code>detected_units</code>.</span>
+          <span>Claude receives all page snippets (first ~200 chars each) and returns JSON <code>{ units: [...] }</code>. Validated with Zod, persisted to <code>detected_units</code>.</span>
         </li>
         <li>
           <strong>Vocabulary extraction</strong>
-          <span>For each detected unit, the full text of every page in <code>[start_page, end_page]</code> is sent to Claude with instructions to extract only explicit vocabulary-list entries. Persisted to <code>extracted_vocabulary</code>.</span>
+          <span>For each detected unit, full page text + <code>page_type</code> annotations are sent to Claude. <code>vocabulary_grid</code> pages are trusted aggressively; <code>reading_passage</code> pages are excluded unless they carry an explicit vocab callout. Persisted to <code>extracted_vocabulary</code>.</span>
         </li>
       </ol>
-      <p>All LLM responses are persisted with their <code>confidence</code> and free-text <code>reasoning</code> so the review UI can surface why the model picked what it did.</p>
+      <p>All LLM responses are persisted with their <code>confidence</code> and free-text <code>reasoning</code> so the review UI can surface why the model picked what it did. <code>extracted_pages.extraction_method</code> records which combination of Marker + vision produced each page's text.</p>
+
+      <div class="callout">
+        <span class="tag">Re-runnable</span>
+        Two scripts re-run individual stages on demand without re-uploading: <code>npm run reextract-doc &lt;sourceDocumentId&gt; -- --confirm</code> wipes and re-runs Marker + vision; <code>npm run reextract-vocab &lt;projectId&gt; -- --confirm</code> wipes and re-runs only the vocab prompt against existing pages. Use these while iterating.
+      </div>
     </section>
 
     <section id="review">
@@ -530,8 +547,15 @@ ANTHROPIC_API_KEY=sk-ant-...
 NEXT_PUBLIC_APP_URL=https://ingest.mschool.com.tw
 </code></pre>
 
-      <h3>5 · Deploy</h3>
-      <p>The container's <code>npm start</code> runs <code>drizzle-kit push --force &amp;&amp; next start</code>, so the schema is applied on every boot — no migration choreography.</p>
+      <h3>5 · Resource sizing</h3>
+      <ul>
+        <li><strong>Memory:</strong> at least <strong>6&nbsp;GB</strong> allocated to the container. Marker uses ~4&nbsp;GB during inference, the rest goes to Node + headroom. The 2&nbsp;GB Hetzner CX11 will OOM.</li>
+        <li><strong>Disk:</strong> image is ~5&nbsp;GB. The model cache lives in the image (pre-warmed at build), so no extra volume is needed.</li>
+        <li><strong>CPU:</strong> Marker runs on CPU (no GPU support assumed). Expect ~20&nbsp;s/page on a modern x86 core; a 100-page textbook takes 30–40&nbsp;min end-to-end.</li>
+      </ul>
+
+      <h3>6 · Deploy</h3>
+      <p>The container's <code>npm start</code> runs <code>drizzle-kit push --force &amp;&amp; next start</code>, so the schema is applied on every boot — no migration choreography. First build is slow (PyTorch + model download); subsequent builds are cached if you don't touch <code>requirements.txt</code>.</p>
     </section>
 
     <section id="testplan">
@@ -560,31 +584,38 @@ NEXT_PUBLIC_APP_URL=https://ingest.mschool.com.tw
 
     <section id="phase2">
       <h2><span class="num">10</span>Phase 2 priorities <a class="anchor" href="#phase2">#</a></h2>
-      <p>Ordered by expected value-to-effort after building Phase 1.</p>
+      <p>Ordered by expected value-to-effort after building Phase 1.5 (Marker + vision). Page-image rendering and vision fallback moved <em>up</em> into shipping scope; the items below are what's still on deck.</p>
       <ol>
-        <li><strong>Page-image rendering.</strong> The review UI shows only extracted text today; rendering each PDF page to PNG (PyMuPDF subprocess) is the single biggest UX win for catching extraction errors. Storage key already exists in schema (<code>extracted_pages.page_image_key</code>).</li>
-        <li><strong>OCR fallback for scanned PDFs.</strong> AF&amp;F is digital, but several other curricula on the shelf are scans. PyMuPDF + Tesseract is enough; pipeline already branches on <code>file_type</code>.</li>
-        <li><strong>Vision-LLM fallback for vocabulary.</strong> Many ESL vocab pages are picture-word grids where words sit inside the images. Claude with image input would catch what text extraction misses. <em>Most likely cause of any AF&amp;F vocab-count shortfall.</em></li>
-        <li><strong>Inline edit of word / unit assignment.</strong> Right now you can toggle approve / reject / POS but not edit the word or move it between units.</li>
+        <li><strong>Page images in the review UI.</strong> Images are already rendered to R2 — review just needs a panel that loads the page PNG alongside the extracted text + vision response for that page. Cheapest remaining UX win.</li>
+        <li><strong>Inline edit of word / unit assignment.</strong> Today you can toggle approve / reject / POS but not edit the word itself or move a row between units.</li>
         <li><strong>Reading-passage extraction.</strong> Separate stage; needs paragraph segmentation and a different prompt. Schema columns to be added.</li>
+        <li><strong>Direct-to-R2 uploads.</strong> Browser PUTs via presigned URL → app records the storage key. Removes the proxy body-size limit (recording-app's Traefik caps at ~50&nbsp;MB), and any sized textbook becomes uploadable.</li>
         <li><strong>Cross-unit deduplication.</strong> Spiral curricula re-introduce words; flag "first appearance" vs "recurring."</li>
         <li><strong>CEFR auto-tagging.</strong> Claude assigns A1/A2/B1 per entry; expose a calibration step. Field is already nullable.</li>
         <li><strong>Multi-document projects.</strong> Some curricula ship as multiple PDFs (student book + workbook); schema supports many <code>source_documents</code> per project, but unit-detection prompt would need to merge across docs.</li>
-        <li><strong>Job queue.</strong> Currently fire-and-forget from the upload route. A failed pipeline run requires manual re-trigger via <code>tsx scripts/run-pipeline.ts</code>. A tiny pg-backed queue with retries would help.</li>
+        <li><strong>Job queue.</strong> Currently fire-and-forget from the upload route. With Marker's 30-min runs this matters more: a failed pipeline run requires manual re-trigger via <code>npm run reextract-doc</code>. A tiny pg-backed queue with retries would help.</li>
+        <li><strong>GPU inference.</strong> Marker on CPU is the dominant latency. A GPU node (T4 / equivalent) drops a 100-page textbook from ~30&nbsp;min to ~3&nbsp;min. Only worth it if ingest volume goes up.</li>
       </ol>
     </section>
 
     <section id="ops">
       <h2><span class="num">11</span>Operational notes <a class="anchor" href="#ops">#</a></h2>
       <ul>
-        <li>All pipeline state is in Postgres. R2 stores binary artifacts only.</li>
+        <li>All pipeline state is in Postgres. R2 stores binary artifacts (source PDFs, per-page PNGs, export bundles) only.</li>
         <li>Schema is auto-applied on boot via <code>drizzle-kit push --force</code>. In production you'd normally use generated migrations, but for a single-operator tool the friction isn't worth it.</li>
         <li><code>system_settings</code> is currently used only for <code>session_token_hash</code>. Future config (LLM temperature overrides, default target levels, etc.) can land there without a migration.</li>
         <li>Logs go to stdout — Coolify's log viewer is fine for v1.</li>
+        <li><strong>Marker model pre-warm:</strong> ~2&nbsp;GB of weights are baked into the Docker image at build time. If a future <code>marker-pdf</code> bump changes the model-load API, the pre-warm step in the Dockerfile falls back silently (<code>|| echo ...</code>) and the first ingest just downloads weights lazily.</li>
+        <li><strong>R2 page-image storage:</strong> ~200&nbsp;KB per page × ~100 pages/textbook = ~20&nbsp;MB per book. Negligible.</li>
+        <li><strong>Vision-fallback cost:</strong> ~$0.01–0.03 per page hit. AF&amp;F Book 1 triggers vision on roughly 20–40 pages = ~$0.50–1 per ingest. Set a small budget alert in Anthropic Console if running many books.</li>
+        <li><strong>Re-running stages:</strong> use <code>npm run reextract-doc &lt;sourceDocumentId&gt; -- --confirm</code> for pages, or <code>npm run reextract-vocab &lt;projectId&gt; -- --confirm</code> for vocab only. Both print what they're about to delete and refuse to act without <code>--confirm</code>.</li>
       </ul>
     </section>
 
     <div class="changelog">
+      <div class="entry"><span class="date">2026-05-14</span>Phase 1.5: replaced <code>pdfjs-dist</code> with <strong>Marker</strong> (Python subprocess) for layout-aware extraction. Added <strong>vision fallback</strong> (Claude image input) for low-text and picture-word pages. Page images now render via <code>pdftoppm</code> on upload and land in R2.</div>
+      <div class="entry"><span class="date">2026-05-14</span>Schema: added <code>extracted_pages.extraction_method</code>. New scripts: <code>reextract-document.ts</code>, <code>reextract-vocab.ts</code>.</div>
+      <div class="entry"><span class="date">2026-05-14</span>Dockerfile switched to <code>node:20-bookworm-slim</code> + Python venv + marker model pre-warm. Container memory floor raised to 6&nbsp;GB.</div>
       <div class="entry"><span class="date">2026-05-13</span>Phase 1 shipped: end-to-end pipeline, review UI, export bundle. Pushed to <code>taogeht/book-ingest</code>.</div>
       <div class="entry"><span class="date">2026-05-13</span>Switched DB recommendation from a dedicated Postgres container to a shared Postgres + dedicated DB/role.</div>
       <div class="entry"><span class="date">2026-05-13</span>Operator handbook moved from README.md to this living HTML doc.</div>

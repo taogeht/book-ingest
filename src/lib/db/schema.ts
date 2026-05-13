@@ -34,6 +34,17 @@ export const sourceStatusEnum = pgEnum('ingest_source_status', [
   'failed',
 ]);
 
+// Track which extraction method populated each page's raw_text:
+//   marker          — Marker's text/layout extraction only
+//   vision          — Claude vision call only (marker produced nothing usable)
+//   marker+vision   — Marker ran, then vision augmented/replaced its output
+//                     because the page was empty or picture-heavy.
+export const extractionMethodEnum = pgEnum('ingest_extraction_method', [
+  'marker',
+  'vision',
+  'marker+vision',
+]);
+
 export const ingestionProjects = pgTable('ingestion_projects', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   name: text('name').notNull(),
@@ -76,6 +87,7 @@ export const extractedPages = pgTable(
     rawText: text('raw_text').notNull().default(''),
     layoutJson: jsonb('layout_json'),
     pageImageKey: text('page_image_key'),
+    extractionMethod: extractionMethodEnum('extraction_method').notNull().default('marker'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

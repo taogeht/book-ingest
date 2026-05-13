@@ -29,10 +29,24 @@ export type VocabularyItemOut = {
 export type ExtractVocabularyInput = {
   curriculumName: string;
   unitNumber: number;
-  pages: Array<{ pageNumber: number; text: string }>;
+  pages: Array<{
+    pageNumber: number;
+    text: string;
+    // Set by the vision-fallback stage when it ran on this page. The LLM
+    // uses this as a hint: pages with page_type === 'vocabulary_grid' are
+    // very likely vocab list pages and their text should be trusted
+    // aggressively. Null for pages where vision didn't run.
+    pageType?: 'vocabulary_grid' | 'reading_passage' | 'exercise' | 'dialogue' | 'other' | null;
+  }>;
 };
 
 const SYSTEM = `You are an expert ESL/EFL curriculum extractor. Given the raw text of pages from a single textbook unit, identify the explicit vocabulary words being taught in that unit.
+
+Some pages carry a [page_type=...] annotation from an upstream classifier:
+- vocabulary_grid → strongly trust this page as a vocab list; extract every label/word it surfaces, even short or single-letter items.
+- reading_passage → almost never a vocab source; do NOT extract from here unless the page itself contains an explicit "New words" box.
+- exercise / dialogue → only extract if the page contains an explicit vocab callout.
+- other or no annotation → use the textual signals below to decide.
 
 Two-step process:
 1. Identify which pages contain explicit vocabulary lists (headings like "New words", "Vocabulary", "Key words", or visually obvious word lists with images).
@@ -70,7 +84,10 @@ export async function extractVocabulary(input: ExtractVocabularyInput): Promise<
   // Cap per-page text to keep prompt within reason. Each page typically <2k chars
   // after layout reconstruction; clamp to 3000 to be safe.
   const pageBlock = input.pages
-    .map((p) => `--- Page ${p.pageNumber} ---\n${truncate(p.text, 3000)}`)
+    .map((p) => {
+      const annotation = p.pageType ? ` [page_type=${p.pageType}]` : '';
+      return `--- Page ${p.pageNumber}${annotation} ---\n${truncate(p.text, 3000)}`;
+    })
     .join('\n\n');
 
   const user = `Curriculum: ${input.curriculumName}

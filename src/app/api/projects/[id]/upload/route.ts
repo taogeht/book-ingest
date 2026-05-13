@@ -4,7 +4,6 @@ import { eq } from 'drizzle-orm';
 import { isAuthenticated } from '@/lib/auth';
 import { r2Client, buildSourceKey } from '@/lib/storage/r2-client';
 import { processDocument } from '@/lib/extraction/process-document';
-import { parsePdf } from '@/lib/extraction/pdf-parse';
 import { logError } from '@/lib/logger';
 
 export const runtime = 'nodejs';
@@ -31,34 +30,21 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-
-    // Quick parse to detect digital vs scanned. If pdfjs can extract *any*
-    // text, treat as digital — otherwise mark as scanned.
-    let fileType: 'pdf_digital' | 'pdf_scanned' = 'pdf_digital';
-    try {
-      const probe = await parsePdf(buffer);
-      fileType = probe.isDigital ? 'pdf_digital' : 'pdf_scanned';
-    } catch (err) {
-      logError(err, 'upload.detect-type');
-      // If parsing entirely fails, still upload and mark as failed downstream.
-      fileType = 'pdf_digital';
-    }
-
     const storageKey = buildSourceKey(projectId, file.name);
     await r2Client.uploadFile(storageKey, buffer, 'application/pdf');
 
+    // Marker handles digital PDFs and (optionally) OCRs scanned ones via
+    // Surya. We classify everything as pdf_digital at upload time and let
+    // process-document surface "no extractable content" via the source's
+    // parse_error if Marker returns nothing useful.
     const [row] = await db
       .insert(sourceDocuments)
       .values({
         projectId,
         filename: file.name,
-        fileType,
+        fileType: 'pdf_digital',
         storageKey,
-        status: fileType === 'pdf_digital' ? 'uploaded' : 'failed',
-        parseError:
-          fileType === 'pdf_scanned'
-            ? 'Scanned PDFs not yet supported (Phase 2). Upload a digital PDF.'
-            : null,
+        status: 'uploaded',
       })
       .returning({ id: sourceDocuments.id });
 
@@ -67,14 +53,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       .set({ status: 'uploading', updatedAt: new Date() })
       .where(eq(ingestionProjects.id, projectId));
 
-    if (fileType === 'pdf_digital') {
-      // Fire-and-forget. We deliberately don't await this so the upload
-      // response returns immediately. Errors surface via the source_documents
-      // row's status/parse_error fields.
-      void processDocument(row.id).catch((err) => logError(err, 'process-document.async'));
-    }
+    void processDocument(row.id).catch((err) => logError(err, 'process-document.async'));
 
-    return NextResponse.json({ id: row.id, fileType });
+    return NextResponse.json({ id: row.id });
   } catch (err) {
     logError(err, 'api-upload');
     return NextResponse.json({ error: 'Server error' }, { status: 500 });

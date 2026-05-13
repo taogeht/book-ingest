@@ -16,7 +16,9 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "set-password": "tsx scripts/set-password.ts",
-    "run-pipeline": "tsx scripts/run-pipeline.ts"
+    "run-pipeline": "tsx scripts/run-pipeline.ts",
+    "reextract-doc": "tsx scripts/reextract-document.ts",
+    "reextract-vocab": "tsx scripts/reextract-vocab.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
@@ -27,7 +29,6 @@
     "drizzle-orm": "^0.45.1",
     "jszip": "^3.10.1",
     "next": "16.1.4",
-    "pdfjs-dist": "^4.10.38",
     "pg": "^8.17.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
