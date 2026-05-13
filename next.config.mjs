@@ -15,6 +15,12 @@ const nextConfig = {
       'node_modules/@esbuild/linux-x64',
     ],
   },
+  // Belt-and-suspenders: ensure pdfjs's worker file ships in the build trace
+  // even though we resolve it at runtime via createRequire. If Next ever
+  // tree-shakes node_modules in standalone output, this keeps the file there.
+  outputFileTracingIncludes: {
+    '/api/projects/*/upload': ['./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs'],
+  },
 };
 
 export default nextConfig;

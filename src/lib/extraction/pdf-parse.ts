@@ -25,9 +25,20 @@ export type PdfParseResult = {
 
 async function loadPdfJs() {
   // pdfjs-dist's modern build pulls in browser-only globals; the legacy build
-  // is what works under Node. Using a dynamic import keeps Next from trying to
-  // bundle the worker for the edge.
+  // works under Node, but it still tries to dynamic-import `./pdf.worker.mjs`
+  // for its "fake worker" mode. Next/Turbopack rewrites that relative import
+  // to a chunks/ path and doesn't copy the worker file, so the lookup fails
+  // at runtime with `Cannot find module '.../chunks/pdf.worker.mjs'`.
+  //
+  // Setting GlobalWorkerOptions.workerSrc to the real node_modules path
+  // before getDocument runs makes pdfjs load the worker synchronously via
+  // Node's module resolver instead of the relative dynamic import.
   const mod = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  if (!mod.GlobalWorkerOptions.workerSrc) {
+    const { createRequire } = await import('node:module');
+    const req = createRequire(import.meta.url);
+    mod.GlobalWorkerOptions.workerSrc = req.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
+  }
   return mod;
 }
 
