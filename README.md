@@ -93,7 +93,23 @@ vocabulary.json   # array of approved vocab entries with unit_number / source_pa
    - New Resource → "Application" → Public Git repository.
    - Build Pack: **Dockerfile**.
    - Domain: `ingest.mschool.com.tw` (Coolify provisions the Let's Encrypt cert).
-3. **Database**: create a new Postgres service under Coolify (`curriculum_ingest`). Recommended to keep this isolated from `recording-app`'s DB for easier backup + debug.
+3. **Database**: reuse the existing recording-app Postgres instance with a dedicated database + role for isolation at the SQL level (not the container level). Connect to the Postgres container as a superuser and run:
+
+   ```sql
+   CREATE DATABASE curriculum_ingest;
+   CREATE ROLE ingest_app WITH LOGIN PASSWORD 'pick-a-strong-one';
+   GRANT ALL PRIVILEGES ON DATABASE curriculum_ingest TO ingest_app;
+
+   -- Connect to the new DB to grant schema-level privileges:
+   \c curriculum_ingest
+   GRANT ALL ON SCHEMA public TO ingest_app;
+   ```
+
+   Then set `DATABASE_URL=postgresql://ingest_app:pick-a-strong-one@<recording-app-postgres-host>:5432/curriculum_ingest`.
+
+   This keeps one Postgres container, one backup job, one thing to monitor. The two databases are isolated — `ingest_app` cannot touch the recording-app DB. The only shared resource is the connection pool / shared_buffers, which is fine because this tool runs only single-user LLM-driven workloads.
+
+   **If you ever want full isolation later**: spin up a second Postgres service in Coolify and point `DATABASE_URL` at it. The schema is `drizzle-kit push --force`'d on boot, so migrating is `pg_dump` → restore → swap the env var. No code changes needed.
 4. **R2**: create a new bucket `curriculum-ingest-sources`. Reuse the existing R2 API credentials from `recording-app`.
 5. **Env vars** (in Coolify → application → "Environment Variables"):
    ```
