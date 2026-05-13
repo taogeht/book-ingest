@@ -12,6 +12,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link href="/projects" className="hover:text-gray-900">
               Projects
             </Link>
+            <a href="/docs.html" target="_blank" rel="noreferrer" className="hover:text-gray-900">
+              Docs
+            </a>
             <form action="/api/logout" method="post">
               <button className="hover:text-gray-900" type="submit">
                 Sign out

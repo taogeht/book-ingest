@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>curriculum-ingest · operator handbook</title>
+<style>
+  :root {
+    --ink: #111418;
+    --paper: #fbfaf6;
+    --paper-2: #f3f1ea;
+    --rule: #e5e2d8;
+    --muted: #6b7280;
+    --accent: #2f6f4f;
+    --accent-soft: #e7f0eb;
+    --warn: #b45309;
+    --warn-soft: #fef3c7;
+    --code-bg: #1c1f24;
+    --code-ink: #e6edf3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --serif: "Iowan Old Style", "Palatino Linotype", "URW Palladio L", P052, Palatino, "Book Antiqua", serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--paper); color: var(--ink); }
+  body {
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 48px;
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 32px 24px 96px;
+  }
+
+  /* Header strip across the top */
+  .topbar {
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper-2);
+  }
+  .topbar-inner {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 14px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    font-size: 13px;
+  }
+  .topbar a { color: var(--ink); text-decoration: none; }
+  .topbar a:hover { text-decoration: underline; }
+  .topbar .right { color: var(--muted); }
+  .topbar .right code { font-family: var(--mono); }
+
+  /* TOC */
+  nav.toc {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+    font-size: 13px;
+    line-height: 1.5;
+    border-left: 1px solid var(--rule);
+    padding-left: 16px;
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+  }
+  nav.toc .label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: tocsec; }
+  nav.toc li { counter-increment: tocsec; margin-bottom: 6px; }
+  nav.toc li::before {
+    content: counter(tocsec, decimal-leading-zero) "  ";
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  nav.toc a { color: var(--ink); text-decoration: none; }
+  nav.toc a:hover { color: var(--accent); }
+
+  /* Main content */
+  main { min-width: 0; }
+
+  /* Title block */
+  header.title {
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--rule);
+  }
+  header.title .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  header.title h1 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 40px;
+    line-height: 1.1;
+    margin: 0 0 12px;
+    letter-spacing: -0.01em;
+  }
+  header.title .lede {
+    font-family: var(--serif);
+    font-size: 19px;
+    line-height: 1.45;
+    color: #2a2f36;
+    max-width: 640px;
+    margin: 0;
+  }
+  header.title .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 18px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  header.title .meta strong { color: var(--ink); font-weight: 600; }
+
+  /* Status bar */
+  .statusbar {
+    margin: 0 0 32px;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    background: white;
+  }
+  .statusbar > div {
+    padding: 14px 18px;
+    border-right: 1px solid var(--rule);
+  }
+  .statusbar > div:last-child { border-right: none; }
+  .statusbar .label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .statusbar .value { font-size: 14px; font-weight: 500; }
+
+  /* Sections */
+  section { margin: 48px 0; }
+  section:first-of-type { margin-top: 16px; }
+  section h2 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 26px;
+    letter-spacing: -0.005em;
+    margin: 0 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--rule);
+    scroll-margin-top: 80px;
+  }
+  section h2 .num {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+    margin-right: 12px;
+    letter-spacing: 0;
+    vertical-align: 3px;
+  }
+  section h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 28px 0 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink);
+  }
+  section p { margin: 0 0 12px; max-width: 720px; }
+  section ul, section ol { padding-left: 22px; margin: 0 0 16px; max-width: 720px; }
+  section li { margin-bottom: 6px; }
+  section li > strong { color: var(--ink); }
+
+  /* Code */
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--paper-2);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #1f2937;
+  }
+  pre {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 16px 18px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 0 0 16px;
+    max-width: 720px;
+  }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  pre .c { color: #8b949e; font-style: italic; } /* comment */
+  pre .k { color: #ff7b72; }                     /* keyword */
+  pre .s { color: #a5d6ff; }                     /* string */
+  pre .n { color: #d2a8ff; }                     /* identifier-ish */
+
+  /* Callouts */
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 14px;
+    max-width: 720px;
+  }
+  .callout.warn { border-color: var(--warn); background: var(--warn-soft); }
+  .callout .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-right: 8px;
+  }
+  .callout.warn .tag { color: var(--warn); }
+
+  /* Tables */
+  table { width: 100%; max-width: 720px; border-collapse: collapse; margin: 0 0 16px; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+
+  /* Pipeline diagram */
+  .pipeline {
+    list-style: none;
+    counter-reset: step;
+    padding: 0;
+    margin: 16px 0;
+    max-width: 720px;
+  }
+  .pipeline li {
+    counter-increment: step;
+    position: relative;
+    padding: 12px 12px 12px 56px;
+    border: 1px solid var(--rule);
+    background: white;
+    margin-bottom: 8px;
+    border-radius: 4px;
+  }
+  .pipeline li::before {
+    content: counter(step);
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    display: grid;
+    place-items: center;
+  }
+  .pipeline li strong { display: block; margin-bottom: 2px; font-size: 14px; }
+  .pipeline li span { font-size: 13px; color: var(--muted); }
+
+  /* Section anchors (subtle # on hover) */
+  h2 .anchor {
+    opacity: 0;
+    margin-left: 8px;
+    text-decoration: none;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 14px;
+    transition: opacity 0.15s;
+  }
+  h2:hover .anchor { opacity: 1; }
+
+  /* Footnote / changelog */
+  .changelog {
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--rule);
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .changelog .entry { margin-bottom: 8px; }
+  .changelog .date { font-family: var(--mono); margin-right: 12px; color: var(--ink); }
+
+  /* Mobile */
+  @media (max-width: 880px) {
+    .layout { grid-template-columns: 1fr; gap: 24px; padding: 24px 18px 64px; }
+    nav.toc { position: static; max-height: none; border-left: none; border-top: 1px solid var(--rule); padding: 16px 0 0; }
+    header.title h1 { font-size: 32px; }
+    header.title .lede { font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="/projects">← back to app</a>
+    <div class="right">
+      <code>curriculum-ingest</code> · operator handbook · <code>v1.0.0</code>
+    </div>
+  </div>
+</div>
+
+<div class="layout">
+
+  <nav class="toc">
+    <div class="label">Contents</div>
+    <ol>
+      <li><a href="#scope">Phase 1 scope</a></li>
+      <li><a href="#stack">Stack</a></li>
+      <li><a href="#local">Local development</a></li>
+      <li><a href="#auth">Auth model</a></li>
+      <li><a href="#pipeline">Pipeline</a></li>
+      <li><a href="#review">Review UI</a></li>
+      <li><a href="#export">Export bundle</a></li>
+      <li><a href="#deploy">Deployment (Coolify)</a></li>
+      <li><a href="#testplan">AF&amp;F Book 1 test plan</a></li>
+      <li><a href="#phase2">Phase 2 priorities</a></li>
+      <li><a href="#ops">Operational notes</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <header class="title">
+      <div class="eyebrow">Operator handbook</div>
+      <h1>curriculum-ingest</h1>
+      <p class="lede">A single-operator webapp that extracts structured curriculum data from textbook PDFs and produces an exportable bundle suitable for seeding a new LMS instance.</p>
+      <div class="meta">
+        <span><strong>Production:</strong> <a href="https://ingest.mschool.com.tw">ingest.mschool.com.tw</a></span>
+        <span><strong>Repo:</strong> <a href="https://github.com/taogeht/book-ingest">taogeht/book-ingest</a></span>
+        <span><strong>Host:</strong> Coolify on Hetzner</span>
+      </div>
+    </header>
+
+    <div class="statusbar">
+      <div>
+        <div class="label">Phase</div>
+        <div class="value">1 · MVP extraction</div>
+      </div>
+      <div>
+        <div class="label">First target</div>
+        <div class="value">AF&amp;F Book 1</div>
+      </div>
+      <div>
+        <div class="label">Known-good size</div>
+        <div class="value">379 vocab entries</div>
+      </div>
+      <div>
+        <div class="label">Last reviewed</div>
+        <div class="value">2026-05-13</div>
+      </div>
+    </div>
+
+    <section id="scope">
+      <h2><span class="num">01</span>Phase 1 scope <a class="anchor" href="#scope">#</a></h2>
+      <p>The slice that's shipped today. Anything not listed here is intentionally deferred — see <a href="#phase2">Phase 2 priorities</a>.</p>
+      <ul>
+        <li>Digital PDFs only — no OCR, no vision-LLM fallback.</li>
+        <li>Vocabulary extraction only — no reading passages, no grammar focus.</li>
+        <li>One source document per project.</li>
+        <li>LLM-driven unit detection + vocabulary extraction (Claude Sonnet 4.6).</li>
+        <li>Review UI: approve / reject / toggle multi-word / edit POS via dropdown.</li>
+        <li>Export to <code>.bundle.zip</code> containing <code>manifest.json</code>, <code>curriculum.json</code>, <code>vocabulary.json</code>.</li>
+      </ul>
+    </section>
+
+    <section id="stack">
+      <h2><span class="num">02</span>Stack <a class="anchor" href="#stack">#</a></h2>
+      <table>
+        <thead><tr><th>Layer</th><th>Choice</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Framework</td><td>Next.js 16, App Router, Node runtime</td><td>Matches recording-app</td></tr>
+          <tr><td>Database</td><td>Postgres + Drizzle ORM</td><td>Schema applied via <code>drizzle-kit push</code> on boot</td></tr>
+          <tr><td>Object storage</td><td>Cloudflare R2 (S3 API)</td><td>Shared account with recording-app</td></tr>
+          <tr><td>PDF parsing</td><td><code>pdfjs-dist</code> legacy build</td><td>Node-native, no Python dep in v1</td></tr>
+          <tr><td>LLM</td><td><code>@anthropic-ai/sdk</code> · Sonnet 4.6</td><td>Two-stage prompt: units, then vocab</td></tr>
+          <tr><td>Bundle</td><td><code>jszip</code></td><td>Pure Node, no native deps</td></tr>
+          <tr><td>UI</td><td>Tailwind v4</td><td>Same conventions as recording-app</td></tr>
+          <tr><td>Auth</td><td>Single password via <code>INGEST_PASSWORD</code> env</td><td>Single-operator tool</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="local">
+      <h2><span class="num">03</span>Local development <a class="anchor" href="#local">#</a></h2>
+<pre><code><span class="c"># Copy env template, fill in DATABASE_URL, R2_*, ANTHROPIC_API_KEY, INGEST_PASSWORD</span>
+cp .env.example .env.local
+
+npm install
+npm run db:push     <span class="c"># applies schema to your local Postgres</span>
+npm run dev
+</code></pre>
+      <p>Open <code>http://localhost:3000</code>, enter <code>INGEST_PASSWORD</code>, create a project, upload a PDF.</p>
+    </section>
+
+    <section id="auth">
+      <h2><span class="num">04</span>Auth model <a class="anchor" href="#auth">#</a></h2>
+      <p>Auth is intentionally minimal — this is a tool for one operator. No user accounts, no sessions table.</p>
+      <ul>
+        <li>Password lives in the <code>INGEST_PASSWORD</code> env var.</li>
+        <li><code>POST /api/login</code> constant-time compares the submitted password against that env var.</li>
+        <li>On success a 32-byte random token is generated, hashed with SHA-256, and stored as <code>system_settings.session_token_hash</code>.</li>
+        <li>The token (cleartext) is sent back as an <code>HttpOnly</code> cookie <code>ingest_session</code>.</li>
+        <li>Middleware redirects every <code>/projects/*</code> and protected API route to <code>/login</code> when the cookie is missing. Route handlers re-validate the hash on every authenticated request.</li>
+      </ul>
+      <div class="callout warn">
+        <span class="tag">Note</span>
+        Rotating <code>INGEST_PASSWORD</code> doesn't auto-invalidate existing sessions. To force re-login, call <code>POST /api/logout</code> or delete the <code>session_token_hash</code> row in <code>system_settings</code>.
+      </div>
+    </section>
+
+    <section id="pipeline">
+      <h2><span class="num">05</span>Pipeline <a class="anchor" href="#pipeline">#</a></h2>
+      <p>Triggered fire-and-forget from <code>POST /api/projects/[id]/upload</code> after the PDF lands in R2.</p>
+
+      <ol class="pipeline">
+        <li>
+          <strong>Detect file type</strong>
+          <span>Quick parse via <code>pdfjs-dist</code>; if any page yields text it's <code>pdf_digital</code>, otherwise <code>pdf_scanned</code> (Phase 2 work).</span>
+        </li>
+        <li>
+          <strong>Page extraction</strong>
+          <span><code>pdfjs-dist</code> text content + position metadata. Lines are reconstructed from y-coordinates and stored in <code>extracted_pages.raw_text</code>; raw item positions go to <code>layout_json</code>.</span>
+        </li>
+        <li>
+          <strong>Unit detection</strong>
+          <span>Claude Sonnet 4.6 receives all page snippets (first ~200 chars each) and returns JSON <code>{ units: [...] }</code>. Validated with Zod, persisted to <code>detected_units</code>.</span>
+        </li>
+        <li>
+          <strong>Vocabulary extraction</strong>
+          <span>For each detected unit, the full text of every page in <code>[start_page, end_page]</code> is sent to Claude with instructions to extract only explicit vocabulary-list entries. Persisted to <code>extracted_vocabulary</code>.</span>
+        </li>
+      </ol>
+      <p>All LLM responses are persisted with their <code>confidence</code> and free-text <code>reasoning</code> so the review UI can surface why the model picked what it did.</p>
+    </section>
+
+    <section id="review">
+      <h2><span class="num">06</span>Review UI <a class="anchor" href="#review">#</a></h2>
+      <p><code>/projects/[id]/review</code> exposes three tabs:</p>
+      <ul>
+        <li><strong>Source documents</strong> — status of each uploaded PDF and any <code>parse_error</code>.</li>
+        <li><strong>Units</strong> — detected units with confidence + LLM reasoning. Toggle <em>reviewed</em>.</li>
+        <li><strong>Vocabulary</strong> — table filterable by unit. Approve / reject per row; toggle multi-word; edit POS via dropdown.</li>
+      </ul>
+      <div class="callout">
+        <span class="tag">Scope</span>
+        Inline editing of the <em>word itself</em> and re-assigning a row to a different unit are deliberately not in Phase 1 — toggle-style review is enough to validate the pipeline.
+      </div>
+    </section>
+
+    <section id="export">
+      <h2><span class="num">07</span>Export bundle <a class="anchor" href="#export">#</a></h2>
+      <p><code>/projects/[id]/export</code> enforces two readiness conditions:</p>
+      <ul>
+        <li>Every detected unit is marked reviewed.</li>
+        <li>At least <strong>80 %</strong> of vocabulary rows are approved.</li>
+      </ul>
+      <p>When ready, <em>Generate bundle</em> creates a ZIP at <code>ingestion-bundles/{project_id}/{ts}.bundle.zip</code> and returns a 24-hour signed URL. Project status moves to <code>exported</code>.</p>
+      <p><strong>Bundle layout:</strong></p>
+<pre><code>manifest.json     <span class="c"># version, project metadata, source-doc info, counts</span>
+curriculum.json   <span class="c"># curriculum name, level, language, units</span>
+vocabulary.json   <span class="c"># array of approved vocab entries with unit_number / source_page</span>
+</code></pre>
+    </section>
+
+    <section id="deploy">
+      <h2><span class="num">08</span>Deployment (Coolify) <a class="anchor" href="#deploy">#</a></h2>
+
+      <h3>1 · Repo + Coolify application</h3>
+      <ul>
+        <li>Push to GitHub (already done: <a href="https://github.com/taogeht/book-ingest">taogeht/book-ingest</a>).</li>
+        <li>Coolify → New Resource → <em>Application</em> → Public Git repository.</li>
+        <li>Build Pack: <strong>Dockerfile</strong>.</li>
+        <li>Domain: <code>ingest.mschool.com.tw</code> — Coolify provisions the Let's Encrypt cert.</li>
+      </ul>
+
+      <h3>2 · Database (shared Postgres, dedicated DB + role)</h3>
+      <p>Reuse the existing recording-app Postgres instance. Connect as a superuser and run:</p>
+<pre><code><span class="k">CREATE DATABASE</span> curriculum_ingest;
+<span class="k">CREATE ROLE</span> ingest_app <span class="k">WITH LOGIN PASSWORD</span> <span class="s">'pick-a-strong-one'</span>;
+<span class="k">GRANT ALL PRIVILEGES ON DATABASE</span> curriculum_ingest <span class="k">TO</span> ingest_app;
+
+<span class="c">-- Connect to the new DB to grant schema-level privileges:</span>
+\c curriculum_ingest
+<span class="k">GRANT ALL ON SCHEMA</span> public <span class="k">TO</span> ingest_app;
+</code></pre>
+      <p>Then <code>DATABASE_URL=postgresql://ingest_app:pick-a-strong-one@&lt;recording-app-postgres-host&gt;:5432/curriculum_ingest</code>.</p>
+      <p>One Postgres container, one backup job, one thing to monitor. The two databases are isolated — <code>ingest_app</code> can't touch the recording-app DB. The only shared resource is the connection pool, fine for a single-user LLM tool.</p>
+      <div class="callout">
+        <span class="tag">Escape hatch</span>
+        Want full isolation later? Spin up a second Postgres service in Coolify and point <code>DATABASE_URL</code> at it. Schema is <code>drizzle-kit push --force</code>'d on boot, so migrating is <code>pg_dump</code> → restore → swap env var. No code changes.
+      </div>
+
+      <h3>3 · R2 bucket</h3>
+      <p>Create a new bucket <code>curriculum-ingest-sources</code>. Reuse the existing R2 API credentials from recording-app.</p>
+
+      <h3>4 · Environment variables</h3>
+<pre><code>DATABASE_URL=postgresql://ingest_app:...@&lt;pg-host&gt;:5432/curriculum_ingest
+INGEST_PASSWORD=&lt;strong password — the only thing protecting the tool&gt;
+R2_ACCOUNT_ID=...
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+R2_BUCKET_NAME=curriculum-ingest-sources
+R2_PUBLIC_URL=https://&lt;accountid&gt;.r2.dev/curriculum-ingest-sources
+ANTHROPIC_API_KEY=sk-ant-...
+NEXT_PUBLIC_APP_URL=https://ingest.mschool.com.tw
+</code></pre>
+
+      <h3>5 · Deploy</h3>
+      <p>The container's <code>npm start</code> runs <code>drizzle-kit push --force &amp;&amp; next start</code>, so the schema is applied on every boot — no migration choreography.</p>
+    </section>
+
+    <section id="testplan">
+      <h2><span class="num">09</span>AF&amp;F Book 1 test plan <a class="anchor" href="#testplan">#</a></h2>
+      <p>The first regression target is <em>American Family &amp; Friends Book 1</em>; we have a known-good <strong>379-entry</strong> vocabulary table from the recording-app.</p>
+      <ol>
+        <li>Sign in to <a href="https://ingest.mschool.com.tw">ingest.mschool.com.tw</a> with <code>INGEST_PASSWORD</code>.</li>
+        <li>Create a new project: name <code>AF&amp;F Book 1</code>, curriculum <code>American Family and Friends</code>, target level <code>1</code>.</li>
+        <li>Upload the digital PDF of Book 1.</li>
+        <li>Watch <code>source_documents.status</code>. It should transition <code>uploaded → parsed</code> within ~30&nbsp;s.</li>
+        <li>Navigate to <code>/projects/[id]/review</code>:
+          <ul>
+            <li><strong>Units tab:</strong> AF&amp;F Book 1 has a Starter unit + 9 numbered units + a Goodbye/Review section. Expect 10–11 detected units; off-by-one on <code>start_page</code> is common.</li>
+            <li><strong>Vocabulary tab:</strong> count should be in the <strong>300–500 range</strong>. Exact match to 379 is not expected — the LLM will include some incidental words and miss a handful.</li>
+          </ul>
+        </li>
+        <li>Spot-check a few units against the known-good list. Approve correct entries, reject obvious mis-extractions.</li>
+        <li>Need to re-run extraction for a doc? <code>tsx scripts/run-pipeline.ts &lt;sourceDocumentId&gt;</code> (locally with same env).</li>
+        <li>Once units are reviewed and 80&nbsp;% of vocab is approved, hit <em>Generate bundle</em> and diff <code>vocabulary.json</code> against the known-good 379.</li>
+      </ol>
+      <div class="callout">
+        <span class="tag">Acceptance</span>
+        Bundle contains ≥&nbsp;300 approved entries that overlap meaningfully with the known-good list. Differences are the operator's problem to reconcile in review.
+      </div>
+    </section>
+
+    <section id="phase2">
+      <h2><span class="num">10</span>Phase 2 priorities <a class="anchor" href="#phase2">#</a></h2>
+      <p>Ordered by expected value-to-effort after building Phase 1.</p>
+      <ol>
+        <li><strong>Page-image rendering.</strong> The review UI shows only extracted text today; rendering each PDF page to PNG (PyMuPDF subprocess) is the single biggest UX win for catching extraction errors. Storage key already exists in schema (<code>extracted_pages.page_image_key</code>).</li>
+        <li><strong>OCR fallback for scanned PDFs.</strong> AF&amp;F is digital, but several other curricula on the shelf are scans. PyMuPDF + Tesseract is enough; pipeline already branches on <code>file_type</code>.</li>
+        <li><strong>Vision-LLM fallback for vocabulary.</strong> Many ESL vocab pages are picture-word grids where words sit inside the images. Claude with image input would catch what text extraction misses. <em>Most likely cause of any AF&amp;F vocab-count shortfall.</em></li>
+        <li><strong>Inline edit of word / unit assignment.</strong> Right now you can toggle approve / reject / POS but not edit the word or move it between units.</li>
+        <li><strong>Reading-passage extraction.</strong> Separate stage; needs paragraph segmentation and a different prompt. Schema columns to be added.</li>
+        <li><strong>Cross-unit deduplication.</strong> Spiral curricula re-introduce words; flag "first appearance" vs "recurring."</li>
+        <li><strong>CEFR auto-tagging.</strong> Claude assigns A1/A2/B1 per entry; expose a calibration step. Field is already nullable.</li>
+        <li><strong>Multi-document projects.</strong> Some curricula ship as multiple PDFs (student book + workbook); schema supports many <code>source_documents</code> per project, but unit-detection prompt would need to merge across docs.</li>
+        <li><strong>Job queue.</strong> Currently fire-and-forget from the upload route. A failed pipeline run requires manual re-trigger via <code>tsx scripts/run-pipeline.ts</code>. A tiny pg-backed queue with retries would help.</li>
+      </ol>
+    </section>
+
+    <section id="ops">
+      <h2><span class="num">11</span>Operational notes <a class="anchor" href="#ops">#</a></h2>
+      <ul>
+        <li>All pipeline state is in Postgres. R2 stores binary artifacts only.</li>
+        <li>Schema is auto-applied on boot via <code>drizzle-kit push --force</code>. In production you'd normally use generated migrations, but for a single-operator tool the friction isn't worth it.</li>
+        <li><code>system_settings</code> is currently used only for <code>session_token_hash</code>. Future config (LLM temperature overrides, default target levels, etc.) can land there without a migration.</li>
+        <li>Logs go to stdout — Coolify's log viewer is fine for v1.</li>
+      </ul>
+    </section>
+
+    <div class="changelog">
+      <div class="entry"><span class="date">2026-05-13</span>Phase 1 shipped: end-to-end pipeline, review UI, export bundle. Pushed to <code>taogeht/book-ingest</code>.</div>
+      <div class="entry"><span class="date">2026-05-13</span>Switched DB recommendation from a dedicated Postgres container to a shared Postgres + dedicated DB/role.</div>
+      <div class="entry"><span class="date">2026-05-13</span>Operator handbook moved from README.md to this living HTML doc.</div>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>

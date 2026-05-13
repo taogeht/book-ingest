@@ -11,7 +11,8 @@ export function middleware(req: NextRequest) {
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
-    pathname === '/'
+    pathname === '/' ||
+    pathname === '/docs.html'
   ) {
     return NextResponse.next();
   }
